@@ -1,68 +1,71 @@
-const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, ChannelType, PermissionFlagsBits, Collection } = require('discord.js');
 
 module.exports = {
-  // Command definition
+  // Command definition (no changes here)
   data: new SlashCommandBuilder()
     .setName('clear')
     .setDescription('Deletes messages older than 2 days from the designated channel.')
-    // Restrict this command to Administrators by default
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   // Execution logic
   async execute(interaction) {
-    // Defer the reply to give the bot time to process
     await interaction.deferReply({ ephemeral: true });
 
     const channelId = process.env.CLEAR_CHANNEL_ID;
-
-    // 1. Check if the channel ID is configured in the .env file
     if (!channelId) {
       console.log('CLEAR_CHANNEL_ID is not set in the .env file.');
       return interaction.editReply({ content: '❌ The channel for this command has not been configured by the bot owner.' });
     }
 
     try {
-      // 2. Fetch the channel from Discord
       const channel = await interaction.client.channels.fetch(channelId);
 
-      if (!channel || !channel.isTextBased()) {
-        return interaction.editReply({ content: '❌ The configured channel is not a valid text channel.' });
+      // --- NEW LOGIC STARTS HERE ---
+
+      // 1. Verify the channel is a Forum Channel
+      if (channel.type !== ChannelType.GuildForum) {
+        return interaction.editReply({ content: '❌ The configured channel is not a Forum Channel. This command is now configured for forums.' });
       }
 
-      // 3. Calculate the timestamp for 2 days ago
+      // 2. Fetch all threads (posts) from the forum
+      const activeThreads = await channel.threads.fetchActive();
+      const archivedThreads = await channel.threads.fetchArchived();
+      
+      const allThreads = new Collection([...activeThreads.threads.entries(), ...archivedThreads.threads.entries()]);
+
+      if (allThreads.size === 0) {
+        return interaction.editReply({ content: '✅ No threads found in the forum to clear.' });
+      }
+
+      let totalDeletedCount = 0;
       const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);
       const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+      
+      // 3. Loop through each thread and clear messages inside it
+      for (const thread of allThreads.values()) {
+        const messages = await thread.messages.fetch({ limit: 100 });
+        const messagesToDelete = messages.filter(m => m.createdTimestamp < twoDaysAgo);
 
-      // 4. Fetch the last 100 messages from the channel
-      const messages = await channel.messages.fetch({ limit: 100 });
+        if (messagesToDelete.size === 0) {
+          continue; // Skip to the next thread if no old messages are found
+        }
 
-      // 5. Filter messages to find those older than 2 days
-      const messagesToDelete = messages.filter(m => m.createdTimestamp < twoDaysAgo);
+        const bulkDeletable = messagesToDelete.filter(m => m.createdTimestamp > twoWeeksAgo);
+        const oldMessages = messagesToDelete.filter(m => m.createdTimestamp <= twoWeeksAgo);
 
-      if (messagesToDelete.size === 0) {
-        return interaction.editReply({ content: '✅ No messages older than 2 days were found to delete.' });
-      }
+        if (bulkDeletable.size > 0) {
+          const deleted = await thread.bulkDelete(bulkDeletable, true);
+          totalDeletedCount += deleted.size;
+        }
 
-      // 6. Separate messages for bulk deletion vs. individual deletion
-      // Discord's bulkDelete can only be used on messages newer than 14 days
-      const bulkDeletable = messagesToDelete.filter(m => m.createdTimestamp > twoWeeksAgo);
-      const oldMessages = messagesToDelete.filter(m => m.createdTimestamp <= twoWeeksAgo);
-
-      let deletedCount = 0;
-
-      // Bulk delete newer messages (more efficient)
-      if (bulkDeletable.size > 0) {
-        const deleted = await channel.bulkDelete(bulkDeletable, true);
-        deletedCount += deleted.size;
-      }
-
-      // Delete very old messages one by one
-      for (const message of oldMessages.values()) {
-        await message.delete();
-        deletedCount++;
+        for (const message of oldMessages.values()) {
+          await message.delete();
+          totalDeletedCount++;
+        }
       }
       
-      return interaction.editReply({ content: `✅ Successfully deleted ${deletedCount} message(s) from <#${channel.id}>.` });
+      // 4. Report the final count
+      return interaction.editReply({ content: `✅ Swept through ${allThreads.size} threads and deleted a total of ${totalDeletedCount} message(s) from <#${channel.id}>.` });
 
     } catch (error) {
       console.error('Error executing /clear command:', error);
