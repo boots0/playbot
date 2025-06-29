@@ -4,7 +4,7 @@ const axios = require('axios');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('report')
-    .setDescription('Analyzes recent chat for plays and generates an AI summary.'),
+    .setDescription('Scrapes recent chat for plays and organizes them into a summary.'),
 
   async execute(interaction) {
     await interaction.deferReply();
@@ -35,26 +35,22 @@ module.exports = {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join('\n');
         
-      const logBuffer = Buffer.from(chatLog, 'utf-8');
-      
-      await interaction.followUp({
-        content: '🕵️ Here is the exact chat log being sent to the AI for analysis. Please review it.',
-        files: [{ attachment: logBuffer, name: 'chatlog-to-ai.txt' }],
-        ephemeral: true
-      });
+      // --- NEW, SIMPLER SYSTEM PROMPT ---
+      // This prompt focuses on scraping and organizing, not analysis.
+      const systemPrompt = `You are a data scraping bot for a Discord server. Your ONLY task is to read a chat log and extract and organize any message that states a clear trading action. Do not analyze, assess, or judge the plays.
 
-      // --- NEW: Improved System Prompt ---
-      const systemPrompt = `You are a financial analyst bot for a Discord server. Your task is to identify potential stock or option plays from a chat log based on a strict set of criteria.
-
-A valid play MUST contain these three elements:
+A valid trade to be logged MUST contain these two elements:
 1.  **Ticker Symbol:** e.g., SPY, AAPL, TSLA.
-2.  **Direction/Action:** A clear action like 'buying calls', 'selling puts', 'going long', 'shorting', or 'opening a position'.
-3.  **Thesis/Reason:** The 'why' behind the trade, such as a technical indicator, a news event, or a specific price target.
+2.  **Direction/Action:** A clear action like 'buying calls', 'selling puts', 'going long', 'shorting', 'in puts', 'grabbed calls'.
 
-**Good Example (You MUST identify this):** "I'm buying NVDA $130 calls here. The chart just broke out of a bull flag and I think it runs to $135."
-**Bad Example (You MUST ignore this):** "Wow TSLA is moving a lot today!" or "Anyone watching SPY?" or "I sold my SPY calls" (this is a closed trade, not a new play).
+The 'why' or 'thesis' is NOT required.
 
-If you find one or more valid plays, format them neatly into a summary post with sections for each play. If you find no messages that meet all three criteria, you must respond with only the single word 'NONE'.`;
+**IMPORTANT CONTEXT RULE:** Messages from the same author sent close together in time should be treated as a single, connected thought. You can find the Ticker and Direction across a few of their messages.
+* Example 1: "the_real_sammy: going long on LMT here" -> This IS a valid play.
+* Example 2: "boots0: IN SPX PUTS" -> This IS a valid play.
+* Example 3: "boots0: probably targeting 400" -> This IS NOT a valid play by itself, but should be included as context if the Ticker/Direction was mentioned just before.
+
+If you find one or more valid plays, format them neatly into a simple list for logging purposes. If you find no messages that contain both a Ticker and a Direction, you must respond with only the single word 'NONE'.`;
       
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
         model: 'gpt-4o',
@@ -70,29 +66,21 @@ If you find one or more valid plays, format them neatly into a summary post with
       
       const aiResponse = response.data.choices[0].message.content;
 
-      // --- NEW DEBUGGING STEP ---
-      // This will show you the AI's exact response before the bot acts on it.
-      await interaction.followUp({
-        content: `🕵️ **AI's Raw Response:**\n\`\`\`\n${aiResponse}\n\`\`\``,
-        ephemeral: true
-      });
-      // --- END NEW DEBUGGING STEP ---
-
       if (aiResponse.trim().toUpperCase() === 'NONE') {
-        return interaction.editReply('✅ Analysis complete. No new plays were found in the chat log.');
+        return interaction.editReply('✅ Analysis complete. No new plays were found that met the criteria.');
       }
 
       const outputChannel = await interaction.client.channels.fetch(OUTPUT_CHANNEL_ID);
       const reportEmbed = new EmbedBuilder()
-        .setTitle('Recent Plays Summary')
+        .setTitle('Recent Trade Log')
         .setDescription(aiResponse)
         .setColor('#0099ff')
         .setTimestamp()
-        .setFooter({ text: 'Generated from #chat activity' });
+        .setFooter({ text: 'Scraped from #chat activity' });
 
       await outputChannel.send({ embeds: [reportEmbed] });
 
-      return interaction.editReply(`✅ Report generated and posted to <#${OUTPUT_CHANNEL_ID}>.`);
+      return interaction.editReply(`✅ Trade log generated and posted to <#${OUTPUT_CHANNEL_ID}>.`);
 
     } catch (error) {
       console.error('Error with /report command:', error.response ? error.response.data : error.message);
