@@ -7,7 +7,6 @@ module.exports = {
     .setDescription('Scrapes recent chat for plays and organizes them into a summary.'),
 
   async execute(interaction) {
-    // CHANGED: Defer reply ephemerally (privately) so the final confirmation is hidden.
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     if (interaction.user.id !== process.env.ADMIN_USER_ID) {
@@ -36,18 +35,15 @@ module.exports = {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join('\n');
         
-      const systemPrompt = `You are a data scraping bot for a Discord server. Your only task is to read a chat log and extract specific, detailed information about trading actions. Do not analyze or judge the plays. The goal is to create a detailed log that someone could use to understand the trade.
+      const systemPrompt = `You are a data scraping bot. Your ONLY task is to read a chat log and extract trade information into a structured JSON format.
 
 A logged play MUST contain:
 1.  **ticker:** The stock ticker.
 2.  **direction:** The action taken.
 
-In addition, you MUST ALSO find and include these OPTIONAL details if they are mentioned:
-* **strike:** The strike price of an option (e.g., the "455" in "455 puts").
-* **premium:** The entry price paid (e.g., the "1.25" in "@ 1.25").
-* **target:** The price target for the trade (e.g., the "400" in "targeting 400").
+Also include these optional keys if found: 'strike', 'premium', 'target'. If an optional detail is not found, its value should be null.
 
-**CRITICAL CONTEXT RULE:** You must connect details from messages sent by the same author close together. A user might state the Ticker/Direction in one message and the Target/Price in the next. Combine them into a single, detailed log entry.
+**CRITICAL:** Your entire response MUST be a single, valid JSON array of objects. Do NOT include any text, explanations, or markdown before or after the JSON array.
 
 **Example of your required output format:**
 [
@@ -84,16 +80,21 @@ If you find no valid plays, you MUST respond with an empty JSON array: []`;
       
       const aiResponseString = response.data.choices[0].message.content;
 
-      let plays = [];
+      // --- NEW: Robust JSON parsing and validation ---
+      let parsedData;
       try {
         const cleanedJsonString = aiResponseString.replace(/```json\n|```/g, '');
-        plays = JSON.parse(cleanedJsonString);
+        parsedData = JSON.parse(cleanedJsonString);
       } catch (e) {
         console.error("Failed to parse JSON from AI:", aiResponseString);
         return interaction.editReply('❌ The AI returned an invalid response. Please try again.');
       }
 
-      if (!plays || plays.length === 0) {
+      // Check if the AI returned a single object and wrap it in an array if it did.
+      const plays = Array.isArray(parsedData) ? parsedData : [parsedData];
+      // --- END NEW SECTION ---
+
+      if (!plays || plays.length === 0 || plays[0] === null) {
         return interaction.editReply('✅ Analysis complete. No new plays were found that met the criteria.');
       }
 
@@ -123,7 +124,7 @@ If you find no valid plays, you MUST respond with an empty JSON array: []`;
       return interaction.editReply(`✅ Trade log generated and posted to <#${OUTPUT_CHANNEL_ID}>.`);
 
     } catch (error) {
-      console.error('Error with /report command:', error.response ? error.response.data : error.message);
+      console.error('Error with /report command:', error);
       return interaction.editReply('❌ An error occurred. Check the bot logs for details.');
     }
   },
