@@ -7,11 +7,9 @@ module.exports = {
     .setDescription('Analyzes recent chat for plays and generates an AI summary.'),
 
   async execute(interaction) {
-    // CHANGED: Defer reply publicly so everyone can see the final result.
     await interaction.deferReply();
 
     if (interaction.user.id !== process.env.ADMIN_USER_ID) {
-      // CHANGED: Using flags for the ephemeral rejection message.
       return interaction.editReply({ content: '❌ You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
     }
 
@@ -37,6 +35,19 @@ module.exports = {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join('\n');
         
+      // --- NEW DEBUGGING STEP ---
+      // Create a buffer from the chat log string to send as a file
+      const logBuffer = Buffer.from(chatLog, 'utf-8');
+      
+      // Send the log as a text file for you to review.
+      // We use followUp because we already deferred the reply.
+      await interaction.followUp({
+        content: '🕵️ Here is the exact chat log being sent to the AI for analysis. Please review it.',
+        files: [{ attachment: logBuffer, name: 'chatlog-to-ai.txt' }],
+        ephemeral: true // This message with the file will only be visible to you
+      });
+      // --- END NEW DEBUGGING STEP ---
+
       const systemPrompt = `You are a financial analyst bot for a Discord server. Your task is to read a provided chat log and identify any potential stock or option plays. A play consists of a ticker symbol, a direction (e.g., calls, puts, buy, sell), and a reason or thesis. If you find one or more plays, format them neatly into a summary post with sections for each play. If you find no credible plays mentioned, you must respond with only the single word 'NONE'.`;
       
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
