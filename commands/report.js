@@ -35,20 +35,26 @@ module.exports = {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join('\n');
         
-      // --- NEW DEBUGGING STEP ---
-      // Create a buffer from the chat log string to send as a file
       const logBuffer = Buffer.from(chatLog, 'utf-8');
       
-      // Send the log as a text file for you to review.
-      // We use followUp because we already deferred the reply.
       await interaction.followUp({
         content: '🕵️ Here is the exact chat log being sent to the AI for analysis. Please review it.',
         files: [{ attachment: logBuffer, name: 'chatlog-to-ai.txt' }],
-        ephemeral: true // This message with the file will only be visible to you
+        ephemeral: true
       });
-      // --- END NEW DEBUGGING STEP ---
 
-      const systemPrompt = `You are a financial analyst bot for a Discord server. Your task is to read a provided chat log and identify any potential stock or option plays. A play consists of a ticker symbol, a direction (e.g., calls, puts, buy, sell), and a reason or thesis. If you find one or more plays, format them neatly into a summary post with sections for each play. If you find no credible plays mentioned, you must respond with only the single word 'NONE'.`;
+      // --- NEW: Improved System Prompt ---
+      const systemPrompt = `You are a financial analyst bot for a Discord server. Your task is to identify potential stock or option plays from a chat log based on a strict set of criteria.
+
+A valid play MUST contain these three elements:
+1.  **Ticker Symbol:** e.g., SPY, AAPL, TSLA.
+2.  **Direction/Action:** A clear action like 'buying calls', 'selling puts', 'going long', 'shorting', or 'opening a position'.
+3.  **Thesis/Reason:** The 'why' behind the trade, such as a technical indicator, a news event, or a specific price target.
+
+**Good Example (You MUST identify this):** "I'm buying NVDA $130 calls here. The chart just broke out of a bull flag and I think it runs to $135."
+**Bad Example (You MUST ignore this):** "Wow TSLA is moving a lot today!" or "Anyone watching SPY?" or "I sold my SPY calls" (this is a closed trade, not a new play).
+
+If you find one or more valid plays, format them neatly into a summary post with sections for each play. If you find no messages that meet all three criteria, you must respond with only the single word 'NONE'.`;
       
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
         model: 'gpt-4o',
@@ -63,6 +69,14 @@ module.exports = {
       });
       
       const aiResponse = response.data.choices[0].message.content;
+
+      // --- NEW DEBUGGING STEP ---
+      // This will show you the AI's exact response before the bot acts on it.
+      await interaction.followUp({
+        content: `🕵️ **AI's Raw Response:**\n\`\`\`\n${aiResponse}\n\`\`\``,
+        ephemeral: true
+      });
+      // --- END NEW DEBUGGING STEP ---
 
       if (aiResponse.trim().toUpperCase() === 'NONE') {
         return interaction.editReply('✅ Analysis complete. No new plays were found in the chat log.');
