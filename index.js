@@ -9,7 +9,16 @@ const {
 const fs   = require('fs');
 const path = require('path');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// --- CHANGED LINE ---
+// We've added GatewayIntentBits.MessageContent to the intents array
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.MessageContent // ADD THIS INTENT
+  ] 
+});
+// --- END CHANGED SECTION ---
+
 client.commands = new Map();
 
 // 1) Load all command modules from ./commands
@@ -37,30 +46,26 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
-  // 3) Modal submission handling
+  // 3) Modal submission handling (from your original code, kept for completeness)
   if (interaction.isModalSubmit() && interaction.customId === 'submitIdeaModal') {
     const ticker = interaction.fields.getTextInputValue('tickerInput');
     const thesis = interaction.fields.getTextInputValue('thesisInput');
     const play   = interaction.fields.getTextInputValue('playInput');
 
-    // Build the embed for the post body
     const embed = new EmbedBuilder()
       .setDescription(thesis)
       .setFooter({ text: `Submitted by ${interaction.user.tag}` })
       .setTimestamp();
 
-    // Fetch your target channel (Forum or Text)
     const channel = await client.channels.fetch(process.env.TARGET_CHANNEL_ID);
 
     if (channel.type === ChannelType.GuildForum) {
-      // Create a new forum thread (post)
       await channel.threads.create({
-        name: `💡 ${ticker} — ${play}`,   // becomes the forum post title
-        autoArchiveDuration: 1440,       // archive after 24h of inactivity
-        message: { embeds: [embed] }     // the first message in the thread
+        name: `💡 ${ticker} — ${play}`,
+        autoArchiveDuration: 1440,
+        message: { embeds: [embed] }
       });
     } else {
-      // Fallback for normal text channels
       embed.setTitle(`💡 ${ticker} — ${play}`);
       await channel.send({ embeds: [embed] });
     }
