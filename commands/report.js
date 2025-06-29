@@ -35,22 +35,26 @@ module.exports = {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join('\n');
         
-      // --- NEW, SIMPLER SYSTEM PROMPT ---
-      // This prompt focuses on scraping and organizing, not analysis.
-      const systemPrompt = `You are a data scraping bot for a Discord server. Your ONLY task is to read a chat log and extract and organize any message that states a clear trading action. Do not analyze, assess, or judge the plays.
+      // --- NEW: Final prompt enhanced for specific details ---
+      const systemPrompt = `You are a data scraping bot for a Discord server. Your only task is to read a chat log and extract specific, detailed information about trading actions. Do not analyze or judge the plays. The goal is to create a detailed log that someone could use to understand the trade.
 
-A valid trade to be logged MUST contain these two elements:
-1.  **Ticker Symbol:** e.g., SPY, AAPL, TSLA.
-2.  **Direction/Action:** A clear action like 'buying calls', 'selling puts', 'going long', 'shorting', 'in puts', 'grabbed calls'.
+A logged play MUST contain:
+1.  **Ticker Symbol:** e.g., SPY, AAPL.
+2.  **Direction/Action:** e.g., 'buying calls', 'selling puts', 'long', 'short'.
 
-The 'why' or 'thesis' is NOT required.
+In addition, you MUST ALSO find and include these OPTIONAL details if they are mentioned:
+* **Strike Price:** The strike price of an option (e.g., the "455" in "455 puts").
+* **Premium/Price:** The entry price paid (e.g., the "1.25" in "@ 1.25").
+* **Target Price:** The price target for the trade (e.g., the "400" in "targeting 400").
 
-**IMPORTANT CONTEXT RULE:** Messages from the same author sent close together in time should be treated as a single, connected thought. You can find the Ticker and Direction across a few of their messages.
-* Example 1: "the_real_sammy: going long on LMT here" -> This IS a valid play.
-* Example 2: "boots0: IN SPX PUTS" -> This IS a valid play.
-* Example 3: "boots0: probably targeting 400" -> This IS NOT a valid play by itself, but should be included as context if the Ticker/Direction was mentioned just before.
+**CRITICAL CONTEXT RULE:** You must connect details from messages sent by the same author close together. A user might state the Ticker/Direction in one message and the Target/Price in the next. Combine them into a single, detailed log entry.
 
-If you find one or more valid plays, format them neatly into a simple list for logging purposes. If you find no messages that contain both a Ticker and a Direction, you must respond with only the single word 'NONE'.`;
+**Example from a real chat log:**
+* Chat: "boots0: grabbed LMT puts again at 455 @ 1.25"
+* Chat: "boots0: probably targeting 400"
+* Your Formatted Output for this should be: "Ticker: LMT, Direction: Grabbed puts, Strike: 455, Premium: 1.25, Target: 400"
+
+Format each discovered play on a new line. If you find no messages containing at least a Ticker and a Direction, respond with the single word 'NONE'.`;
       
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
         model: 'gpt-4o',
