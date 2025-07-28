@@ -35,6 +35,11 @@ for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// **NEW**: Add a root route to handle Railway's health checks
+app.get('/', (req, res) => {
+  res.status(200).send('Moja is online and listening!');
+});
+
 // This is the secure endpoint that Railway's cron job will call.
 app.post('/run-report', async (req, res) => {
   // 1. Secure the endpoint with a secret key from your .env file
