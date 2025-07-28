@@ -14,7 +14,6 @@ const express = require('express');
 const { generateReport } = require('./commands/report.js'); // Import the report function
 
 // --- Discord Client Setup ---
-// We need Guilds and MessageContent intents for the bot's core functions.
 const client = new Client({ 
   intents: [
     GatewayIntentBits.Guilds,
@@ -35,27 +34,22 @@ for (const file of fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'))) 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// **NEW**: Add a root route to handle Railway's health checks
 app.get('/', (req, res) => {
   res.status(200).send('Moja is online and listening!');
 });
 
-// This is the secure endpoint that Railway's cron job will call.
 app.post('/run-report', async (req, res) => {
-  // 1. Secure the endpoint with a secret key from your .env file
   const authHeader = req.headers['authorization'];
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     console.warn('Unauthorized attempt to run report.');
     return res.status(401).send('Unauthorized');
   }
 
-  // 2. Ensure the Discord bot is fully logged in and ready
   if (!client.isReady()) {
     console.error('Report trigger failed: Bot is not ready yet.');
     return res.status(503).json({ message: 'Bot is not ready yet. Please try again in a moment.' });
   }
   
-  // 3. Run the report logic
   console.log('Authorized request received. Generating report...');
   const result = await generateReport(client);
   
@@ -68,15 +62,15 @@ app.post('/run-report', async (req, res) => {
   }
 });
 
-// Start the Express server to listen for cron job triggers
-app.listen(port, () => {
-  console.log(`Moja's trigger server is listening on port ${port}`);
-});
-
-
 // --- Discord Event Handlers ---
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+  
+  // **FIX**: Start the Express server ONLY after the bot is successfully logged in.
+  // This is a more robust startup sequence.
+  app.listen(port, () => {
+    console.log(`Moja's trigger server is listening on port ${port}`);
+  });
 });
 
 client.on('interactionCreate', async (interaction) => {
